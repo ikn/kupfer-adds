@@ -7,13 +7,13 @@ __kupfer_actions__ = (
 	)
 __kupfer_text_sources__ = ("CommandTextSource",)
 __description__ = _(u"Run command-line programs. Actions marked with"
-                    u" the symbol %s run in a subshell.") % u"\N{GEAR}"
+					u" the symbol %s run in a subshell.") % u"\N{GEAR}"
 __version__ = ""
 __author__ = "Ulrik Sverdrup <ulrik.sverdrup@gmail.com>"
 
 import os
 import re
-from subprocess import call, check_output
+from subprocess import check_output
 
 import gobject
 
@@ -27,12 +27,12 @@ from kupfer import plugin_support
 
 __kupfer_settings__ = plugin_support.PluginSettings(
 	{
-		"key" : "aliases",
+		"key": "aliases",
 		"label": _("Include Bash aliases"),
 		"type": bool,
 		"value": False
 	}, {
-		"key" : "functions",
+		"key": "functions",
 		"label": _("Include Bash functions"),
 		"type": bool,
 		"value": False
@@ -40,29 +40,30 @@ __kupfer_settings__ = plugin_support.PluginSettings(
 )
 
 # commands to load aliases/functions and make them usable
-bash_cmds = ('shopt -s expand_aliases', 'source /etc/bash.bashrc',
-             'source {0}/.bashrc'.format(os.path.expanduser('~')))
-bash_cmds = ';'.join(bash_cmds) + '\n'
+bash_cmds = 'shopt -s expand_aliases;'
 
 # regex to split aliases in 'alias' output by
 aliases_regex = re.compile(r"(?<!\\)'\nalias ")
 
-def get_bash_aliases ():
-    """Get alias names."""
-    aliases = check_output(('bash', '-c', bash_cmds + 'alias'))
-    aliases = re.split(aliases_regex, aliases)
-    # clean up first and last entries
-    aliases[0] = aliases[0][6:]
-    aliases[-1] = aliases[-1][:aliases[-1].rfind('\'')]
-    # return names
-    return [alias[:alias.find('=')] for alias in aliases]
 
-def get_bash_functions ():
-    """Get function names."""
-    cmds = bash_cmds + 'declare -F'
-    fns = check_output(('bash', '-c', cmds)).strip().split('\n')
-    # name is the last word in each line
-    return [fn.split()[-1] for fn in fns]
+def get_bash_aliases():
+	"""Get alias names."""
+	aliases = check_output(('bash', '-i', '-c', bash_cmds + 'alias'))
+	aliases = re.split(aliases_regex, aliases)
+	# clean up first and last entries
+	aliases[0] = aliases[0][6:]
+	aliases[-1] = aliases[-1][:aliases[-1].rfind('\'')]
+	# return names
+	return [alias[:alias.find('=')] for alias in aliases]
+
+
+def get_bash_functions():
+	"""Get function names."""
+	cmds = bash_cmds + 'declare -F'
+	fns = check_output(('bash', '-i', '-c', cmds)).strip().split('\n')
+	# name is the last word in each line
+	return [fn.split()[-1] for fn in fns]
+
 
 def finish_command(ctx, acommand, stdout, stderr, post_result=True):
 	"""Show async error if @acommand returns error output & error status.
@@ -147,7 +148,7 @@ class PassToCommand (Action):
 
 	def get_description(self):
 		return _("Run program with object as an additional parameter") + \
-		        u" \N{GEAR}"
+				u" \N{GEAR}"
 
 
 class WriteToCommand (Action):
@@ -189,7 +190,7 @@ class WriteToCommand (Action):
 
 	def get_description(self):
 		return _("Run program and supply text on the standard input") + \
-		        u" \N{GEAR}"
+				u" \N{GEAR}"
 
 class FilterThroughCommand (WriteToCommand):
 	def __init__(self):
@@ -201,7 +202,7 @@ class FilterThroughCommand (WriteToCommand):
 
 	def get_description(self):
 		return _("Run program and supply text on the standard input") + \
-		        u" \N{GEAR}"
+				u" \N{GEAR}"
 
 class Command (TextLeaf):
 	def __init__(self, exepath, name):
@@ -223,21 +224,28 @@ class Command (TextLeaf):
 	def get_icon_name(self):
 		return "exec"
 
+
 class BashCommand (Command):
-	def __init__ (self, exepath, name):
+	def __init__(self, exepath, name):
 		TextLeaf.__init__(self, exepath, name)
 
-	def get_description (self):
+	def get_description(self):
 		return unicode(self)
 
-	def get_gicon (self):
+	def get_gicon(self):
 		# not a file, so move on to get_icon_name
 		pass
+
 
 class CommandTextSource (TextSource):
 	"""Yield path and command text items """
 	def __init__(self):
 		TextSource.__init__(self, name=_("Shell Commands"))
+		self.initialize()
+
+	def initialize(self):
+		self._cached_bash_aliases = []
+		self._cached_bash_func = []
 
 	def get_rank(self):
 		return 80
@@ -257,12 +265,18 @@ class CommandTextSource (TextSource):
 		firstword = firstwords[0]
 		# bash aliases/functions: should supercede real commands (you might
 		# have, say, alias ls='ls --color=auto')
-		if (__kupfer_settings__["aliases"] and \
-			firstword in get_bash_aliases()) or \
-		   (__kupfer_settings__["functions"] and \
-		    firstword in get_bash_functions()):
-			cmds = bash_cmds + u" ".join(firstwords)
-			yield BashCommand(u'bash -c "%s"' % cmds, text)
+		if __kupfer_settings__["aliases"]:
+			if not self._cached_bash_aliases:
+				self._cached_bash_aliases = get_bash_aliases()
+			if firstword in self._cached_bash_aliases:
+				cmds = bash_cmds + u" ".join(firstwords)
+				yield BashCommand(u'bash -i -c "%s"' % cmds, text)
+		if __kupfer_settings__["functions"]:
+			if not self._cached_bash_func:
+				self._cached_bash_func = get_bash_functions()
+			if firstword in self._cached_bash_func:
+				cmds = bash_cmds + u" ".join(firstwords)
+				yield BashCommand(u'bash -i -c "%s"' % cmds, text)
 		# iterate over $PATH directories
 		PATH = os.environ.get("PATH", os.defpath)
 		for execdir in PATH.split(os.pathsep):
